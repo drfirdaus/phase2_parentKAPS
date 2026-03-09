@@ -1,0 +1,1643 @@
+---
+title: "phase2_for_thesis"
+author: "firdaus"
+format: 
+  docx:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 6
+    number-sections: true
+    self-contained: true
+editor: visual
+---
+
+# Preliminaries
+
+## Load Library
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(readxl)
+library(foreign)
+library(tidyverse)
+library(ggplot2)
+library(gt)
+library(gtsummary)
+library(haven)
+library(corrplot)
+library(tidyr)
+library(broom)
+library(GGally)   # for ggpairs
+library(rsq)      # for R2
+library(car)
+library(broom)
+library(dplyr)
+library(forcats)
+```
+
+## Load Data
+
+```{r}
+data1 = read_excel("Phase 2 for thesis.xlsx")
+names(data1)
+head(data1)
+dim(data1)
+```
+
+### Dividing the data into sections
+
+```{r}
+parent_vars <- c(
+  "Timestamp","Nama","IC","Telefon","Umur","Umur_Corrected","Jantina_Parent",
+  "Warganegara","Bangsa","Bangsa_Collapsed","Negeri","Zon_Negeri","Status_Perkahwinan","Status_Perkahwinan_Collapsed","Pekerjaan_Utama",
+  "Pendidikan","Pendapatan","Bil_Anak","Bil_Anak_Autisme","Sex_Ed_Childhood",
+  "Support_Group","Persatuan_Autisme","Facebook_Group_Autisme","Whatsapp_Group_Autisme",
+  "Tiada_Kumpulan_Sokongan","Support_Group_Status","Status_Kumpulan_Sokongan_Keseluruhan")
+
+adolescent_vars <- c(
+  "Umur_Anak","Umur_Anak_Autisme","Jantina_Anak","Baligh","Severity_ASD",
+  "Inappropriate_Sex_Behaviour","Melancap_Hadapan_Orang_Lain","Berbogel_Hadapan_Orang_Lain",
+  "Sentuh_Ahli_Keluarga_Tidak_Sesuai","Sentuh_Orang_Lain_Tidak_Sesuai",
+  "Tingkah_Laku_Tidak_Sesuai_Lain","Tiada_Tingkah_Laku_Tidak_Sesuai","Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan","Sex_Victimisation")
+
+
+knowledge_vars <- c(
+  "K1","K2","K3","K4","K5","K6","K7","K8","K9","K10","K11","K12","K13",
+  "K14","K15","K16","K17","K18","K19","K20","K21","K22","K23","K24","K25",
+  "K26","K27","K28","K29","K30","K31","K32","K33"
+)
+
+attitude_vars <- c(
+  "A1","A2","A3","A4","A5","A6","A7","A8","A9","A10","A11",
+  "A12","A13","A14","A15","A16","A17","A18","A19","A20","A21"
+)
+
+practice_vars <- c(
+  "P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11",
+  "P12","P13","P14","P15","P16","P17","P18","P19","P20","P21"
+)
+
+
+data1 <- data1 %>%
+  mutate(across(where(is.character),as_factor)) %>%
+  mutate(
+    Umur_Anak_Autisme = as.numeric(as.character(Umur_Anak_Autisme))
+  )
+
+```
+
+### Coding Knowledge Section
+
+```{r}
+knowledge_items <- paste0("K", 1:33)
+```
+
+Identify Reverse-Coded Knowledge Items
+
+```{r}
+reverse_items <- c("K1", "K2", "K3", "K4")
+
+```
+
+Recode Raw Responses (Ya / Tidak / Tidak pasti)
+
+This converts:
+
+"Ya" → 1
+
+"Tidak" → 0
+
+"Tidak pasti" → 2
+
+Reverse items flip 1 ↔ 0
+
+```{r}
+data1 <- data1 %>%
+  mutate(across(
+    .cols = setdiff(knowledge_items, reverse_items),
+    .fns = ~ case_when(
+      tolower(as.character(.)) == "ya"           ~ 1,
+      tolower(as.character(.)) == "tidak"        ~ 0,
+      tolower(as.character(.)) == "tidak pasti"  ~ 2,
+      TRUE ~ NA_real_
+    )
+  )) %>%
+  mutate(across(
+    .cols = reverse_items,
+    .fns = ~ case_when(
+      tolower(as.character(.)) == "ya"           ~ 0,   # reverse
+      tolower(as.character(.)) == "tidak"        ~ 1,
+      tolower(as.character(.)) == "tidak pasti"  ~ 2,
+      TRUE ~ NA_real_
+    )
+  ))
+
+```
+
+**Convert to Dichotomous (Correct = 1, Incorrect = 0)**
+
+Correct = 1
+
+Incorrect = 0 or 2
+
+```{r}
+knowledge_dicho <- data1 %>%
+  mutate(across(
+    .cols = all_of(knowledge_items),
+    .fns = ~ case_when(
+      . == 1 ~ 1,       # correct
+      . %in% c(0, 2) ~ 0, # incorrect
+      TRUE ~ NA_real_
+    )
+  )) 
+
+```
+
+```{r}
+summary(knowledge_dicho)
+str(knowledge_dicho)
+
+```
+
+#### Define Knowledge Subdomain
+
+```{r}
+# Full list of K items
+knowledge_items <- paste0("K", 1:33)
+
+# Define subdomains
+sub1_items  <- c("K1","K2","K3","K4")                          # Sexual Development
+sub2_items  <- c("K5","K6","K7","K8","K9")                     # Contributing Factors
+sub3_items  <- c("K10","K11","K12","K13","K14")                # Rights & Autonomy
+sub4a_items <- c("K15","K20","K21","K22")                      # Consequences of Sexual Abuse
+sub4b_items <- c("K16","K17","K18","K19")                      # Signs of Sexual Abuse
+sub5a_items <- c("K23","K24","K25","K26","K27")                # Inappropriate Sexual Behaviour
+sub5b_items <- c("K28","K29","K30")                            # Consequences of ISB
+sub6_items  <- c("K31","K32","K33")                            # Sexual Health Education
+
+```
+
+#### Create Total Knowledge Score
+
+```{r}
+knowledge_scores <- knowledge_dicho %>%
+  mutate(
+    Knowledge_Sub1  = rowSums(across(all_of(sub1_items)),  na.rm = TRUE),
+    Knowledge_Sub2  = rowSums(across(all_of(sub2_items)),  na.rm = TRUE),
+    Knowledge_Sub3  = rowSums(across(all_of(sub3_items)),  na.rm = TRUE),
+    Knowledge_Sub4a = rowSums(across(all_of(sub4a_items)), na.rm = TRUE),
+    Knowledge_Sub4b = rowSums(across(all_of(sub4b_items)), na.rm = TRUE),
+    Knowledge_Sub5a = rowSums(across(all_of(sub5a_items)), na.rm = TRUE),
+    Knowledge_Sub5b = rowSums(across(all_of(sub5b_items)), na.rm = TRUE),
+    Knowledge_Sub6  = rowSums(across(all_of(sub6_items)),  na.rm = TRUE),
+
+    # Total knowledge score
+    Knowledge_Total = rowSums(across(all_of(knowledge_items)), na.rm = TRUE)
+  )
+
+
+```
+
+attach this back to main dataset
+
+```{r}
+data1 <- bind_cols(
+  data1,
+  knowledge_scores %>% select(
+    Knowledge_Sub1, Knowledge_Sub2, Knowledge_Sub3,
+    Knowledge_Sub4a, Knowledge_Sub4b, Knowledge_Sub5a,
+    Knowledge_Sub5b, Knowledge_Sub6, Knowledge_Total
+  )
+)
+
+
+```
+
+```{r}
+summary(data1$Knowledge_Total)
+hist(data1$Knowledge_Total, main="Knowledge Total Score", xlab="Score")
+
+
+summary(data1$Knowledge_Sub1)
+summary(data1$Knowledge_Sub6)
+
+names(data1)
+
+
+```
+
+### Coding Attitude Section
+
+#### Define Attitude items + subdomains
+
+```{r}
+attitude_items <- paste0("A", 1:21)
+
+sexed_importance_items <- c("A1","A2","A3","A4","A5","A6")
+sexed_concerns_items   <- c("A7","A8","A9")
+soc_sensitivity_items  <- c("A10","A11","A12")
+parent_role_items      <- c("A13","A14","A15","A16","A17","A18","A19","A20","A21")
+```
+
+#### Reverse-scored items & Likert mapping functions (normal + reverse)
+
+```{r}
+reverse_att_items <- c("A7","A8","A9","A10","A11","A12")
+
+likert_map <- function(x) {
+  recode <- c(
+    "sangat tidak setuju" = 1,
+    "tidak setuju"        = 2,
+    "tidak pasti"         = 3,
+    "setuju"              = 4,
+    "sangat setuju"       = 5
+  )
+  x <- str_squish(tolower(as.character(x)))
+  recode[match(x, names(recode))]
+}
+
+likert_reverse <- function(x) {
+  recode <- c(
+    "sangat tidak setuju" = 5,
+    "tidak setuju"        = 4,
+    "tidak pasti"         = 3,
+    "setuju"              = 2,
+    "sangat setuju"       = 1
+  )
+  x <- str_squish(tolower(as.character(x)))
+  recode[match(x, names(recode))]
+}
+```
+
+#### Recode the Attitude section
+
+```{r}
+attitude_recoded <- data1 %>%
+  select(all_of(attitude_items)) %>%
+  mutate(
+    across(
+      .cols = setdiff(attitude_items, reverse_att_items),
+      .fns  = ~ likert_map(.)
+    ),
+    across(
+      .cols = all_of(reverse_att_items),
+      .fns  = ~ likert_reverse(.)
+    )
+  ) %>%
+  mutate(across(everything(), as.numeric))
+
+# Quick check
+summary(attitude_recoded)
+
+
+```
+
+#### Compute subdomain + total scores (rowSums of 1–5 Likert after reverse scoring)
+
+```{r}
+data1 <- data1 %>%
+  select(-all_of(attitude_items)) %>%
+  bind_cols(attitude_recoded)
+```
+
+```{r}
+data1 <- data1 %>%
+  mutate(
+    Att_Sub1_SexEdImportance = rowSums(across(all_of(sexed_importance_items)), na.rm = TRUE),
+    Att_Sub2_SexEdConcerns   = rowSums(across(all_of(sexed_concerns_items)),   na.rm = TRUE),
+    Att_Sub3_SocSensitivity  = rowSums(across(all_of(soc_sensitivity_items)),  na.rm = TRUE),
+    Att_Sub4_ParentRole      = rowSums(across(all_of(parent_role_items)),      na.rm = TRUE),
+    Att_Total                = rowSums(across(all_of(attitude_items)),         na.rm = TRUE)
+  )
+```
+
+Bind new scores back to data1
+
+```{r}
+# Check new variables
+summary(data1$Att_Total)
+hist(data1$Att_Total, main = "Attitude Total Score", xlab = "Score")
+names(data1)
+
+```
+
+### Coding Practice Section
+
+#### Define Practice items + subdomains
+
+```{r}
+practice_items <- paste0("P", 1:21)
+
+teaching_items <- c("P1","P2","P3","P4","P5","P6","P7","P8","P9","P15","P16")
+monitoring_items <- c("P10","P11","P12","P13","P14")
+involvement_items <- c("P17","P18","P19","P20","P21")
+```
+
+#### Likert mapping function
+
+```{r}
+likert_practice_map <- function(x) {
+  recode <- c(
+    "tidak pernah"   = 1,
+    "jarang"         = 2,
+    "kadang-kadang"  = 3,
+    "selalu"         = 4,
+    "sentiasa"       = 5
+  )
+  x <- str_squish(tolower(as.character(x)))
+  recode[match(x, names(recode))]
+}
+```
+
+#### Recode the practice section
+
+```{r}
+practice_recoded <- data1 %>%
+  select(all_of(practice_items)) %>%
+  mutate(across(
+    everything(),
+    ~ likert_practice_map(.)   # maps to numbers 1–5
+  )) %>%
+  mutate(across(everything(), as.numeric))
+
+# Quick check
+summary(practice_recoded)
+```
+
+#### Compute subdomain + total scores
+
+```{r}
+practice_scores <- practice_recoded %>%
+  mutate(
+    Pra_Sub1_Teaching    = rowSums(across(all_of(teaching_items)), na.rm = TRUE),
+    Pra_Sub2_Monitoring  = rowSums(across(all_of(monitoring_items)), na.rm = TRUE),
+    Pra_Sub3_Involvement = rowSums(across(all_of(involvement_items)), na.rm = TRUE),
+    Pra_Total            = rowSums(across(all_of(practice_items)),   na.rm = TRUE)
+  )
+```
+
+Bind back to data1
+
+```{r}
+data1 <- bind_cols(
+  data1,
+  practice_scores %>%
+    select(Pra_Sub1_Teaching, Pra_Sub2_Monitoring, Pra_Sub3_Involvement, Pra_Total)
+)
+
+
+
+# Check
+summary(data1$Pra_Total)
+class(data1$Pra_Total)        # MUST show "numeric"
+hist(data1$Pra_Total, main="Practice Total Score", xlab="Score")
+names(data1)
+
+```
+
+# Descriptive Statistics
+
+## Parental Characteristics
+
+```{r}
+exclude_parent <- c("Timestamp","Nama","IC","Telefon","Umur","Support_Group", "Status_Perkahwinan", "Persatuan_Autisme", "Facebook_Group_Autisme", "Whatsapp_Group_Autisme", "Tiada_Kumpulan_Sokongan", "Support_Group_Status")
+
+exclude_adolescent <- c(  "Inappropriate_Sex_Behaviour", "Umur_Anak", "Tiada_Tingkah_Laku_Tidak_Sesuai")
+
+parent_vars_final <- setdiff(parent_vars, exclude_parent)
+adolescent_vars_final <- setdiff(adolescent_vars, exclude_adolescent)
+```
+
+```{r}
+tbl_parent <- data1 %>%
+  select(all_of(parent_vars_final)) %>%
+  tbl_summary(
+    type = list(
+      all_continuous() ~ "continuous",
+      all_categorical() ~ "categorical"
+    ),
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    digits = all_continuous() ~ 2,
+    missing = "ifany"
+  ) %>%
+  modify_header(label = "**Parental Characteristics**") %>%
+  bold_labels()
+
+tbl_parent
+
+```
+
+## Adolescent Characteristics
+
+```{r}
+class(data1$Umur_Anak_Autisme)
+unique(data1$Umur_Anak_Autisme)[1:10]
+```
+
+```{r}
+tbl_adolescent <- data1 %>%
+  select(all_of(adolescent_vars_final)) %>%
+  tbl_summary(
+    type = list(
+      all_continuous() ~ "continuous",
+      all_categorical() ~ "categorical"
+    ),
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    digits = all_continuous() ~ 2,
+    missing = "ifany"
+  ) %>%
+  modify_header(label = "**Adolescent Characteristics**") %>%
+  bold_labels()
+
+tbl_adolescent
+
+```
+
+## Mean Score for Knowledge, Attitude and Practice
+
+```{r}
+
+# Create a dataframe with the 3 total variables
+kap_totals <- data1 %>%
+  select(Knowledge_Total, Att_Total, Pra_Total)
+
+# Create gtsummary table with mean, sd, min, max
+tbl_kap <- tbl_summary(
+  kap_totals,
+  type = all_continuous() ~ "continuous2",
+  statistic = all_continuous() ~ "{mean} ({sd}); Min={min}, Max={max}",
+  digits = all_continuous() ~ 2
+) %>%
+  modify_header(label = "**KAP Total Scores**") %>%
+  bold_labels()
+
+tbl_kap
+
+```
+
+```{r}
+
+# Select only total KAP scores
+kap_totals <- data1 %>%
+  select(Knowledge_Total, Att_Total, Pra_Total)
+
+# Create summary dataframe manually
+kap_summary <- kap_totals %>%
+  summarise(
+    Knowledge_Mean_SD = sprintf("%.2f (%.2f)",
+                                mean(Knowledge_Total, na.rm = TRUE),
+                                sd(Knowledge_Total, na.rm = TRUE)),
+    Knowledge_Min_Max = sprintf("%.0f – %.0f",
+                                min(Knowledge_Total, na.rm = TRUE),
+                                max(Knowledge_Total, na.rm = TRUE)),
+    
+    Att_Mean_SD = sprintf("%.2f (%.2f)",
+                          mean(Att_Total, na.rm = TRUE),
+                          sd(Att_Total, na.rm = TRUE)),
+    Att_Min_Max = sprintf("%.0f – %.0f",
+                          min(Att_Total, na.rm = TRUE),
+                          max(Att_Total, na.rm = TRUE)),
+    
+    Pra_Mean_SD = sprintf("%.2f (%.2f)",
+                          mean(Pra_Total, na.rm = TRUE),
+                          sd(Pra_Total, na.rm = TRUE)),
+    Pra_Min_Max = sprintf("%.0f – %.0f",
+                          min(Pra_Total, na.rm = TRUE),
+                          max(Pra_Total, na.rm = TRUE))
+  ) %>%
+  tidyr::pivot_longer(
+    everything(),
+    names_to = "Measure",
+    values_to = "Value"
+  ) %>%
+  mutate(
+    Domain = case_when(
+      grepl("^Knowledge", Measure) ~ "Knowledge_Total",
+      grepl("^Att", Measure) ~ "Att_Total",
+      grepl("^Pra", Measure) ~ "Pra_Total"
+    ),
+    Statistic = case_when(
+      grepl("Mean_SD", Measure) ~ "Mean (SD)",
+      grepl("Min_Max", Measure) ~ "Min – Max"
+    )
+  ) %>%
+  select(Domain, Statistic, Value)
+
+# Create GT table
+gt_table <- kap_summary %>%
+  gt(groupname_col = "Domain") %>%
+  tab_header(
+    title = md("**KAP Total Score Summary**"),
+    subtitle = "Mean (SD) and Min–Max per Domain"
+  ) %>%
+  cols_label(
+    Statistic = "Statistic",
+    Value = "Value"
+  ) %>%
+  fmt_markdown(columns = everything())
+
+gt_table
+
+
+```
+
+### Mean score for Subdomains
+
+```{r}
+# Knowledge subdomains
+knowledge_subdomains <- c(
+  "Knowledge_Sub1", "Knowledge_Sub2", "Knowledge_Sub3",
+  "Knowledge_Sub4a", "Knowledge_Sub4b",
+  "Knowledge_Sub5a", "Knowledge_Sub5b",
+  "Knowledge_Sub6"
+)
+
+# Attitude subdomains
+attitude_subdomains <- c(
+  "Att_Sub1_SexEdImportance",
+  "Att_Sub2_SexEdConcerns",
+  "Att_Sub3_SocSensitivity",
+  "Att_Sub4_ParentRole"
+)
+
+# Practice subdomains
+practice_subdomains <- c(
+  "Pra_Sub1_Teaching",
+  "Pra_Sub2_Monitoring",
+  "Pra_Sub3_Involvement"
+)
+
+
+```
+
+```{r}
+make_subdomain_summary <- function(df, vars, domain_label){
+  df %>%
+    summarise(across(
+      all_of(vars),
+      list(
+        Mean_SD = ~ sprintf("%.2f (%.2f)", mean(.x, na.rm = TRUE), sd(.x, na.rm = TRUE)),
+        Min_Max = ~ sprintf("%.0f – %.0f", min(.x, na.rm = TRUE), max(.x, na.rm = TRUE))
+      ),
+      .names = "{.col}_{.fn}"
+    )) %>%
+    tidyr::pivot_longer(
+      everything(),
+      names_to = "Measure",
+      values_to = "Value"
+    ) %>%
+    separate(Measure, into = c("Variable", "Statistic"), sep = "_(?=[^_]+$)") %>%
+    mutate(Domain = domain_label) %>%
+    select(Domain, Variable, Statistic, Value)
+}
+
+```
+
+```{r}
+knowledge_summary <- make_subdomain_summary(data1, knowledge_subdomains, "Knowledge")
+attitude_summary  <- make_subdomain_summary(data1, attitude_subdomains,  "Attitude")
+practice_summary  <- make_subdomain_summary(data1, practice_subdomains,  "Practice")
+
+```
+
+```{r}
+kap_subdomain_summary <- bind_rows(
+  knowledge_summary,
+  attitude_summary,
+  practice_summary
+)
+
+```
+
+```{r}
+kap_subdomain_table <- kap_subdomain_summary %>%
+  gt(groupname_col = "Domain", rowname_col = "Variable") %>%
+  tab_header(
+    title = md("**KAP Subdomain Score Summary**"),
+    subtitle = "Mean (SD) and Min–Max for Each Subdomain"
+  ) %>%
+  cols_label(
+    Statistic = "Statistic",
+    Value = "Value"
+  ) %>%
+  fmt_markdown(columns = everything()) %>%
+  tab_style(
+    style = list(cell_text(weight = "bold")),
+    locations = cells_column_labels(everything())
+  )
+
+kap_subdomain_table
+
+```
+
+# Linear Regression
+
+## Define the Independent Variables
+
+#### Predictor for Knowledge
+
+```{r}
+data2_remove_vars <- c(
+  "Timestamp","Nama","IC","Telefon","Umur","Support_Group", 
+  "Status_Perkahwinan", "Persatuan_Autisme", "Facebook_Group_Autisme", 
+  "Whatsapp_Group_Autisme", "Tiada_Kumpulan_Sokongan", 
+  "Support_Group_Status", "Inappropriate_Sex_Behaviour", 
+  "Umur_Anak", "Tiada_Tingkah_Laku_Tidak_Sesuai",  
+  "Melancap_Hadapan_Orang_Lain","Berbogel_Hadapan_Orang_Lain",
+  "Sentuh_Ahli_Keluarga_Tidak_Sesuai","Sentuh_Orang_Lain_Tidak_Sesuai",
+  "Tingkah_Laku_Tidak_Sesuai_Lain","Negeri","Bangsa","Warganegara", 
+  paste0("K",1:33),
+  paste0("A",1:21),
+  paste0("P",1:21), 
+  "Knowledge_Sub1", "Knowledge_Sub2", "Knowledge_Sub3",  "Knowledge_Sub4a", "Knowledge_Sub4b",  "Knowledge_Sub5a", "Knowledge_Sub5b",
+  "Knowledge_Sub6",   "Att_Sub1_SexEdImportance",  "Att_Sub2_SexEdConcerns",  "Att_Sub3_SocSensitivity",  "Att_Sub4_ParentRole",
+  "Pra_Sub1_Teaching",  "Pra_Sub2_Monitoring",  "Pra_Sub3_Involvement")
+
+data2 <- data1 %>%
+  select(-all_of(data2_remove_vars))
+
+data2 <- data2 %>%
+  mutate(
+    Pendapatan_raw = Pendapatan,        # keep original
+    Pendapatan = Pendapatan / 1000      # overwrite with scaled version
+  )
+
+data2 <- data2 %>% 
+  mutate(
+    Pekerjaan_Utama = fct_relevel(Pekerjaan_Utama, "Suri rumah / Suami rumah"),
+    Pendidikan      = fct_relevel(Pendidikan, "Sekolah Rendah & Lain - lain"),
+    Severity_ASD    = fct_relevel(Severity_ASD, "Tahap 1 - Memerlukan Sokongan"),
+    Zon_Negeri      = fct_relevel(Zon_Negeri, "Zon Sentral"),
+    Status_Kumpulan_Sokongan_Keseluruhan = fct_relevel(Status_Kumpulan_Sokongan_Keseluruhan, "Tiada Kumpulan Sokongan"),
+    Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan = fct_relevel(Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan, "Tiada Sejarah Tingkah Laku Tidak Sesuai")
+                      
+  )
+
+
+head(data2)
+
+```
+
+```{r}
+data2%>%
+  select(where(is.numeric)) %>%
+  ggpairs()
+
+
+```
+
+# Knowledge
+
+```{r}
+names(data2)
+```
+
+## Simple Linear Regression
+
+To screen
+
+```{r}
+slr_knowledge0 <- lm(Knowledge_Total ~ 1, data = data2)  # intercept only model
+
+add1(slr_knowledge0, scope = ~  Umur_Corrected + Jantina_Parent + Bangsa_Collapsed + Zon_Negeri + Status_Perkahwinan_Collapsed +  Pekerjaan_Utama + Pendidikan + Pendapatan + Bil_Anak + Bil_Anak_Autisme + Sex_Ed_Childhood + Status_Kumpulan_Sokongan_Keseluruhan + Umur_Anak_Autisme + Jantina_Anak + Baligh + Severity_ASD + Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan + Sex_Victimisation,     test = "F")
+```
+
+To get crude b, 95% CI and p-value\
+
+```{r}
+predictors_knowledge <- c(
+  "Umur_Corrected", "Jantina_Parent", "Bangsa_Collapsed", "Zon_Negeri",
+  "Status_Perkahwinan_Collapsed", "Pekerjaan_Utama", "Pendidikan", 
+  "Pendapatan", "Bil_Anak", "Bil_Anak_Autisme", "Sex_Ed_Childhood",
+  "Status_Kumpulan_Sokongan_Keseluruhan", "Umur_Anak_Autisme", 
+  "Jantina_Anak", "Baligh", "Severity_ASD", 
+  "Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan", "Sex_Victimisation"
+)
+```
+
+```{r}
+crude_results_knowledge <- lapply(predictors_knowledge, function(v) {
+  fmla <- as.formula(paste("Knowledge_Total ~", v))
+  model_knowledge <- lm(fmla, data = data2)
+  out <- tidy(model_knowledge, conf.int = TRUE)
+  out$predictor <- v
+  out[out$term != "(Intercept)", ]  # keep only the predictor row
+})
+
+crude_results_knowledge <- do.call(rbind, crude_results_knowledge)
+
+crude_results_knowledge
+
+```
+
+```{r}
+crude_results_knowledge <- crude_results_knowledge[, 
+  c("predictor", "term", "estimate", "conf.low", "conf.high", "p.value")
+]
+
+```
+
+```{r}
+tbl_crude_knowledge <- 
+  tbl_uvregression(
+    data = data2,
+    y = Knowledge_Total,       # outcome variable
+    method = lm,               # linear regression
+    exponentiate = FALSE,      # B coefficient, not OR
+    include = c(
+      Umur_Corrected, Jantina_Parent, Bangsa_Collapsed, Zon_Negeri,
+      Status_Perkahwinan_Collapsed, Pekerjaan_Utama, Pendidikan, 
+      Pendapatan, Bil_Anak, Bil_Anak_Autisme, Sex_Ed_Childhood,
+      Status_Kumpulan_Sokongan_Keseluruhan, Umur_Anak_Autisme, 
+      Jantina_Anak, Baligh, Severity_ASD, 
+      Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan, Sex_Victimisation
+    )
+  ) %>%
+  bold_p(t = 0.05) %>%   # bold p < 0.05
+  add_n()                # add sample size column
+
+tbl_crude_knowledge
+```
+
+Double check Pendidikan
+
+```{r}
+slr.pendidikan <- lm(Knowledge_Total ~ Pendidikan, data = data2)
+summary(slr.pendidikan)
+tidy(slr.pendidikan, conf.int = TRUE)
+```
+
+## Multiple Linear Regression
+
+### Variable Selection
+
+#### Enter Selection
+
+```{r}
+mlr_knowledge <- lm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Zon_Negeri + Status_Perkahwinan_Collapsed +  Pekerjaan_Utama + Pendidikan + Pendapatan + Sex_Ed_Childhood  + Severity_ASD + Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan, data = data2)
+
+summary(mlr_knowledge)
+```
+
+#### Forward Selection
+
+```{r}
+mlr_knowledge_stepforward <- step(slr_knowledge0, scope = ~ Jantina_Parent + Bangsa_Collapsed + Zon_Negeri + Status_Perkahwinan_Collapsed +  Pekerjaan_Utama + Pendidikan + Pendapatan + Sex_Ed_Childhood  + Severity_ASD + Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan , 
+                            direction = "forward")
+
+
+```
+
+#### Backward Selection
+
+```{r}
+mlr_knowledge_stepback <- step(mlr_knowledge, direction = "backward")
+```
+
+#### Bidirectional selection
+
+```{r}
+mlr_knowledge_stepboth <- step(mlr_knowledge, direction = "both")
+```
+
+Variable Selected based on forward, backward and bidirectional : Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + Pekerjaan_Utama + Pendidikan
+
+## Preliminary model
+
+```{r}
+mlr_knowledge_prelim <- lm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + 
+    Pekerjaan_Utama + Pendidikan, data = data2)
+summary(mlr_knowledge_prelim)
+```
+
+#### Multicollinearity Check (VIF)
+
+```{r}
+vif(mlr_knowledge_prelim, type = "predictor")
+```
+
+The GVIF results indicate that all predictors in the multiple linear regression model exhibit low multicollinearity, with GVIF values ranging from 1.11 to 1.56 and adjusted GVIF\^(1/(2·Df)) values between 1.01 and 1.12. These values are well below the commonly accepted thresholds (GVIF \> 5 or adjusted GVIF \> 2), suggesting that the predictors are sufficiently independent. Therefore, multicollinearity is not a concern in this model, and all variables can be retained without compromising coefficient stability or interpretability.
+
+#### Checking Interaction
+
+```{r}
+mlr_knowledge_prelim <- lm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + 
+    Pekerjaan_Utama + Pendidikan, data = data2)
+```
+
+##### Jantina_Parent : Bangsa_Collapsed
+
+```{r}
+summary(glm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + 
+    Pekerjaan_Utama + Pendidikan + Jantina_Parent : Bangsa_Collapsed , data = data2))
+```
+
+No interaction Jantina_Parent : Bangsa_Collapsed
+
+##### Jantina_Parent : Status_Perkahwinan_Collapsed
+
+```{r}
+summary(glm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + 
+    Pekerjaan_Utama + Pendidikan + Jantina_Parent : Status_Perkahwinan_Collapsed , data = data2))
+```
+
+No interaction Jantina_Parent : Status_Perkahwinan_Collapsed
+
+##### Jantina_Parent : Pekerjaan_Utama
+
+```{r}
+summary(glm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + 
+    Pekerjaan_Utama + Pendidikan + Jantina_Parent : Pekerjaan_Utama , data = data2))
+```
+
+No interaction Jantina_Parent : Pekerjaan_Utama
+
+##### Jantina_Parent : Pendidikan
+
+```{r}
+summary(glm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + 
+    Pekerjaan_Utama + Pendidikan + Jantina_Parent : Pendidikan , data = data2))
+```
+
+No interaction Jantina_Parent : Pendidikan
+
+##### Bangsa_Collapsed : Status_Perkahwinan_Collapsed
+
+```{r}
+summary(glm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + 
+    Pekerjaan_Utama + Pendidikan + Bangsa_Collapsed : Status_Perkahwinan_Collapsed , data = data2))
+```
+
+No interaction Bangsa_Collapsed : Status_Perkahwinan_Collapsed
+
+##### Bangsa_Collapsed + Pekerjaan_Utama
+
+```{r}
+summary(glm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + 
+    Pekerjaan_Utama + Pendidikan + Bangsa_Collapsed : Pekerjaan_Utama , data = data2))
+```
+
+There is significant interaction
+
+```         
+Bangsa_CollapsedBumiputera Sarawak:Pekerjaan_UtamaPenjawat Awam    10.8115     4.3635   2.478  0.01373 *
+```
+
+But the model is instable with presence of NA results
+
+##### Bangsa_collapsed : Pendidikan
+
+```{r}
+summary(glm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + 
+    Pekerjaan_Utama + Pendidikan + Bangsa_Collapsed : Pendidikan , data = data2))
+```
+
+1 interaction is significant, however model is unstable due to presence of NA
+
+```         
+Bangsa_CollapsedBukan Bumiputera:PendidikanSekolah Rendah & Lain - lain    17.8597     7.0245   2.542 0.011464 *
+```
+
+##### Status_Perkahwinan_Collapsed : Pekerjaan_Utama
+
+```{r}
+summary(glm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + 
+    Pekerjaan_Utama + Pendidikan + Status_Perkahwinan_Collapsed : Pekerjaan_Utama , data = data2))
+```
+
+There is 1 significant interaction
+
+```         
+Status_Perkahwinan_CollapsedBercerai / Balu / Duda /Lain-lain:Pekerjaan_UtamaBekerja sendiri  -7.9274     4.0213  -1.971   0.0495 * 
+```
+
+But the model is unstable due to presence of NA
+
+##### Status_Perkahwinan_Collapsed : Pendidikan
+
+```{r}
+summary(glm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + 
+    Pekerjaan_Utama + Pendidikan + Status_Perkahwinan_Collapsed : Pendidikan , data = data2))
+```
+
+There is significant interaction
+
+```         
+Status_Perkahwinan_CollapsedBercerai / Balu / Duda /Lain-lain:PendidikanSekolah Menengah / Kolej -16.5559     7.0272  -2.356   0.0191 *   Status_Perkahwinan_CollapsedBercerai / Balu / Duda /Lain-lain:PendidikanUniversiti               -17.2619     7.2228  -2.390   0.0174 * 
+```
+
+Model for interaction terms
+
+```{r}
+mlr_knowledge_kahwin.pendidikan <- lm(Knowledge_Total ~ Jantina_Parent + Bangsa_Collapsed + Status_Perkahwinan_Collapsed + 
+    Pekerjaan_Utama + Pendidikan + Status_Perkahwinan_Collapsed : Pendidikan , data = data2)
+summary(mlr_knowledge_kahwin.pendidikan)
+```
+
+### Model fit assessment
+
+#### Percentage of variance explained, R2
+
+```{r}
+rsq(mlr_knowledge_prelim, adj = TRUE)
+rsq(mlr_knowledge_kahwin.pendidikan, adj = TRUE)
+```
+
+#### Histogram and box-and-whiskers plot
+
+To assess the normality of raw/unstandardized residuals of the MLR model.
+
+```{r}
+rraw_knowledge <- resid(mlr_knowledge_prelim)
+hist(rraw_knowledge)
+
+rraw_knowledge.interaction <- resid(mlr_knowledge_kahwin.pendidikan)
+hist(rraw_knowledge.interaction)
+
+```
+
+```{r}
+boxplot(rraw_knowledge)
+
+boxplot(rraw_knowledge.interaction)
+```
+
+#### Normality of residuals
+
+```{r}
+plot(mlr_knowledge_prelim, which = 2)  # Q-Q plot
+shapiro.test(resid(mlr_knowledge_prelim))
+
+plot(mlr_knowledge_kahwin.pendidikan, which = 2)  # Q-Q plot
+shapiro.test(resid(mlr_knowledge_kahwin.pendidikan))
+```
+
+#### Scatter plots
+
+standardized residuals vs standardized predicted values plot
+
+```{r}
+rstd_knowledge <- rstandard(mlr_knowledge_prelim)  # standardized residuals
+pstd_knowledge <- scale(predict(mlr_knowledge_prelim))  # standardized predicted values
+plot(rstd_knowledge ~ pstd_knowledge, xlab = "Std predicted", ylab = "Std residuals")
+abline(0, 0)  # normal, linear, equal variance
+
+
+rstd_knowledge.interaction <- rstandard(mlr_knowledge_kahwin.pendidikan)  # standardized residuals
+pstd_knowledge.interaction <- scale(predict(mlr_knowledge_kahwin.pendidikan))  # standardized predicted values
+plot(rstd_knowledge.interaction ~ pstd_knowledge.interaction, xlab = "Std predicted", ylab = "Std residuals")
+abline(0, 0)  # normal, linear, equal variance
+```
+
+linear relationship between the raw residuals and the observed values of the numerical predictors
+
+```{r}
+plot(rraw_knowledge ~ data2$Knowledge_Total, xlab = "Knowledge Total", ylab = "Raw Residuals")
+abline(0, 0)
+
+plot(rraw_knowledge.interaction ~ data2$Knowledge_Total, xlab = "Knowledge Total", ylab = "Raw Residuals")
+abline(0, 0)
+```
+
+```{r}
+plot(mlr_knowledge_prelim, which = 1)
+
+plot(mlr_knowledge_kahwin.pendidikan, which = 1)
+```
+
+### Comparing Model with and Without Interaction
+
+```{r}
+anova(mlr_knowledge_prelim, mlr_knowledge_kahwin.pendidikan, test = "LRT")
+```
+
+Stick with **Model 1 (main effects only, without interaction)** because:
+
+✔ Better parsimony\
+✔ More stable coefficients\
+✔ No risk of overfitting\
+✔ Easier to explain in thesis\
+✔ Interaction only produces marginal improvement (p ≈ 0.053)
+
+## Final Model Knowledge
+
+```{r}
+tbl_mlr_knowledge <- tbl_regression(
+  mlr_knowledge_prelim,
+  exponentiate = FALSE,
+  conf.int = TRUE) %>%
+  add_significance_stars() %>%
+  bold_p(t = 0.05) %>%
+  bold_labels()%>%
+  add_glance_source_note()
+tbl_mlr_knowledge
+
+```
+
+```{r}
+tbl_mlr_knowledge <- tbl_regression(
+  mlr_knowledge_prelim,
+  exponentiate = FALSE,
+  conf.int = TRUE)
+tbl_mlr_knowledge
+```
+
+# Attitude
+
+```{r}
+slr_att0 <- lm(Att_Total ~ 1, data = data2)  # intercept only model
+
+add1(slr_att0, scope = ~  Umur_Corrected + Jantina_Parent + Bangsa_Collapsed + Zon_Negeri + Status_Perkahwinan_Collapsed +  Pekerjaan_Utama + Pendidikan + Pendapatan + Bil_Anak + Bil_Anak_Autisme + Sex_Ed_Childhood + Status_Kumpulan_Sokongan_Keseluruhan + Umur_Anak_Autisme + Jantina_Anak + Baligh + Severity_ASD + Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan + Sex_Victimisation + Knowledge_Total,     test = "F")
+
+```
+
+```{r}
+tbl_crude_att <- 
+  tbl_uvregression(
+    data = data2,
+    y = Att_Total,       # outcome variable
+    method = lm,               # linear regression
+    exponentiate = FALSE,      # B coefficient, not OR
+    include = c(
+      Umur_Corrected, Jantina_Parent, Bangsa_Collapsed, Zon_Negeri,
+      Status_Perkahwinan_Collapsed, Pekerjaan_Utama, Pendidikan, 
+      Pendapatan, Bil_Anak, Bil_Anak_Autisme, Sex_Ed_Childhood,
+      Status_Kumpulan_Sokongan_Keseluruhan, Umur_Anak_Autisme, 
+      Jantina_Anak, Baligh, Severity_ASD, 
+      Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan, Sex_Victimisation, Knowledge_Total
+    )
+  ) %>%
+  bold_p(t = 0.05) %>%   # bold p < 0.05
+  add_n()                # add sample size column
+
+tbl_crude_att
+```
+
+## Multiple Linear Regression
+
+### Variable Selection
+
+#### Enter Selection
+
+```{r}
+mlr_att <- lm(Att_Total ~ Jantina_Parent + Bangsa_Collapsed + Zon_Negeri + Status_Perkahwinan_Collapsed +  Pekerjaan_Utama + Pendidikan + Pendapatan + Sex_Ed_Childhood  + Severity_ASD + Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan + Knowledge_Total, data = data2)
+
+summary(mlr_att)
+```
+
+![](images/clipboard-9133593.png)
+
+#### Forward Selection
+
+```{r}
+mlr_att_stepforward <- step(slr_att0, scope = ~ Bangsa_Collapsed + Zon_Negeri + Status_Perkahwinan_Collapsed +  Pekerjaan_Utama  + Pendidikan + Pendapatan + Bil_Anak_Autisme + Status_Kumpulan_Sokongan_Keseluruhan + Jantina_Anak + Baligh + Severity_ASD + Knowledge_Total  , 
+                            direction = "forward")
+```
+
+#### Backward selection
+
+```{r}
+mlr_attitude_stepback <- step(mlr_att, direction = "backward")
+```
+
+#### Bidirectional selection
+
+```{r}
+mlr_att_stepboth <- step(mlr_att, direction = "both")
+```
+
+Variable Selected based on forward, backward and bidirectional : Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total
+
+## Preliminary Model
+
+```{r}
+mlr_att_prelim <- lm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total, data = data2)
+summary(mlr_att_prelim)
+```
+
+#### Multicollinearity Check (VIF)
+
+```{r}
+vif(mlr_att_prelim, type = "predictor")
+```
+
+#### Checking Interaction
+
+##### Bangsa_Collapsed : Pendidikan
+
+```{r}
+summary(glm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total + Bangsa_Collapsed : Pendidikan , data = data2))
+```
+
+No interaction Bangsa_Collapsed : Pendidikan
+
+##### Bangsa_Collapsed : Pendapatan
+
+```{r}
+summary(glm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total + Bangsa_Collapsed : Pendapatan , data = data2))
+```
+
+No interaction Bangsa_Collapsed : Pendapatan
+
+##### Bangsa_Collapsed : Severity_ASD
+
+```{r}
+summary(glm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total + Bangsa_Collapsed : Severity_ASD , data = data2))
+```
+
+No interaction Bangsa_Collapsed : Severity_ASD
+
+##### Bangsa_Collapsed : Knowledge_Total
+
+```{r}
+summary(glm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total + Bangsa_Collapsed : Knowledge_Total , data = data2))
+```
+
+There is interaction
+
+```         
+Bangsa_CollapsedBumiputera Sarawak:Knowledge_Total       1.046e+00  4.089e-01   2.559  0.01094 * 
+```
+
+##### Pendidikan : Pendapatan
+
+```{r}
+summary(glm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total + Pendidikan : Pendapatan , data = data2))
+```
+
+There is no interaction
+
+##### Pendidikan : Severity_ASD
+
+```{r}
+summary(glm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total + Pendidikan : Severity_ASD , data = data2))
+```
+
+No interaction
+
+##### Pendidikan : Knowledge_Total
+
+```{r}
+summary(glm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total + Pendidikan : Knowledge_Total , data = data2))
+```
+
+No interaction
+
+##### Pendapatan : Severity_ASD
+
+```{r}
+summary(glm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total + Pendapatan : Severity_ASD , data = data2))
+```
+
+No interaction
+
+##### Pendapatan : Knowledge_Total
+
+```{r}
+summary(glm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total + Pendapatan : Knowledge_Total , data = data2))
+```
+
+No interaction
+
+##### Severity_ASD : Knowledge_Total
+
+```{r}
+summary(glm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total + Severity_ASD : Knowledge_Total , data = data2))
+```
+
+No interaction
+
+### Comparing Model with and Without Interaction
+
+Models with interaction terms
+
+```{r}
+mlr_att_prelim <- lm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total, data = data2)
+```
+
+```{r}
+mlr_att_bangsa.knowledge <- lm(Att_Total ~ Bangsa_Collapsed + Pendidikan + Pendapatan + Severity_ASD + Knowledge_Total + Bangsa_Collapsed : Knowledge_Total , data = data2)
+summary(mlr_att_bangsa.knowledge)
+```
+
+```{r}
+anova(mlr_att_prelim, mlr_att_bangsa.knowledge)
+```
+
+```{r}
+AIC(mlr_att_prelim, mlr_att_bangsa.knowledge)
+```
+
+### Model fit assessment
+
+#### Percentage of variance explained, R2
+
+```{r}
+rsq(mlr_att_prelim, adj = TRUE)
+rsq(mlr_att_bangsa.knowledge, adj = TRUE)
+```
+
+#### Histogram and box-and-whiskers plot
+
+To assess the normality of raw/unstandardized residuals of the MLR model.
+
+```{r}
+rraw_att <- resid(mlr_att_prelim)
+hist(rraw_att)
+
+rraw_att.interaction <- resid(mlr_att_bangsa.knowledge)
+hist(rraw_att.interaction)
+```
+
+#### Normality of residuals
+
+```{r}
+plot(mlr_att_prelim, which = 2)  # Q-Q plot
+shapiro.test(resid(mlr_att_prelim))
+
+plot(mlr_att_bangsa.knowledge, which = 2)  # Q-Q plot
+shapiro.test(resid(mlr_att_bangsa.knowledge))
+```
+
+#### Scatter plots
+
+standardized residuals vs standardized predicted values plot
+
+```{r}
+rstd_att <- rstandard(mlr_att_prelim)  # standardized residuals
+pstd_att <- scale(predict(mlr_att_prelim))  # standardized predicted values
+plot(rstd_att ~ pstd_att, xlab = "Std predicted", ylab = "Std residuals")
+abline(0, 0)  # normal, linear, equal variance
+
+
+rstd_att.interaction <- rstandard(mlr_att_bangsa.knowledge)  # standardized residuals
+pstd_att.interaction <- scale(predict(mlr_att_bangsa.knowledge))  # standardized predicted values
+plot(rstd_att.interaction ~ pstd_att.interaction, xlab = "Std predicted", ylab = "Std residuals")
+abline(0, 0)  # normal, linear, equal variance
+```
+
+linear relationship between the raw residuals and the observed values of the numerical predictors
+
+```{r}
+plot(rraw_att ~ data2$Att_Total, xlab = "Attitude Total", ylab = "Raw Residuals")
+abline(0, 0)
+
+plot(rraw_att.interaction ~ data2$Att_Total, xlab = "Attitude Total", ylab = "Raw Residuals")
+abline(0, 0)
+```
+
+```{r}
+plot(mlr_att_prelim, which = 1)
+
+plot(mlr_att_bangsa.knowledge, which = 1)
+```
+
+## Final Model Attitude
+
+```{r}
+tbl_kap_att <- tbl_regression(
+  mlr_att_prelim,
+  exponentiate = FALSE,
+  conf.int = TRUE) %>%
+  add_significance_stars() %>%
+  bold_p(t = 0.05) %>%
+  bold_labels()%>%
+  add_glance_source_note()
+tbl_kap_att
+```
+
+```{r}
+tbl_kap_att <- tbl_regression(
+  mlr_att_prelim,
+  exponentiate = FALSE,
+  conf.int = TRUE) 
+tbl_kap_att
+```
+
+# Practice
+
+```{r}
+slr_pra0 <- lm(Pra_Total ~ 1, data = data2)  # intercept only model
+
+add1(slr_pra0, scope = ~  Umur_Corrected + Jantina_Parent + Bangsa_Collapsed + Zon_Negeri + Status_Perkahwinan_Collapsed +  Pekerjaan_Utama + Pendidikan + Pendapatan + Bil_Anak + Bil_Anak_Autisme + Sex_Ed_Childhood + Status_Kumpulan_Sokongan_Keseluruhan + Umur_Anak_Autisme + Jantina_Anak + Baligh + Severity_ASD + Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan + Sex_Victimisation + Knowledge_Total + Att_Total,     test = "F")
+
+```
+
+```{r}
+tbl_crude_pra <- 
+  tbl_uvregression(
+    data = data2,
+    y = Pra_Total,       # outcome variable
+    method = lm,               # linear regression
+    exponentiate = FALSE,      # B coefficient, not OR
+    include = c(
+      Umur_Corrected, Jantina_Parent, Bangsa_Collapsed, Zon_Negeri,
+      Status_Perkahwinan_Collapsed, Pekerjaan_Utama, Pendidikan, 
+      Pendapatan, Bil_Anak, Bil_Anak_Autisme, Sex_Ed_Childhood,
+      Status_Kumpulan_Sokongan_Keseluruhan, Umur_Anak_Autisme, 
+      Jantina_Anak, Baligh, Severity_ASD, 
+      Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan, Sex_Victimisation, Knowledge_Total, Att_Total
+    )
+  ) %>%
+  bold_p(t = 0.05) %>%   # bold p < 0.05
+  add_n()                # add sample size column
+
+tbl_crude_pra
+```
+
+## Multiple Linear Regression
+
+### Variable Selection
+
+#### Enter Selection
+
+```{r}
+mlr_pra <- lm(Pra_Total ~ Umur_Corrected + Status_Perkahwinan_Collapsed + Pendidikan + Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan + Knowledge_Total + Att_Total, data = data2)
+
+summary(mlr_pra)
+```
+
+#### Forward selection
+
+```{r}
+mlr_pra_stepforward <- step(slr_pra0, scope = ~ Umur_Corrected + Status_Perkahwinan_Collapsed + Pendidikan + Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Sejarah_Tingkah_Laku_Tidak_Sesuai_Keseluruhan + Knowledge_Total + Att_Total , 
+                            direction = "forward")
+```
+
+#### Backward selection
+
+```{r}
+mlr_pra_stepback <- step(mlr_pra, direction = "backward")
+```
+
+#### Bidirectional selection
+
+```{r}
+mlr_pra_stepboth <- step(mlr_pra, direction = "both")
+```
+
+Variable Selected based on forward, backward and bidirectional : Umur_Corrected + Pendidikan + Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total
+
+## Preliminary Model
+
+```{r}
+mlr_pra_prelim <- lm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total, data = data2)
+summary(mlr_pra_prelim)
+```
+
+#### Multicollinearity Check (VIF)
+
+```{r}
+vif(mlr_pra_prelim, type = "predictor")
+```
+
+#### Checking Interaction
+
+##### Umur_Corrected : Pendidikan
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Umur_Corrected : Pendidikan , data = data2))
+```
+
+No interaction
+
+##### Umur_Corrected : Bil_Anak_Autisme
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Umur_Corrected : Bil_Anak_Autisme , data = data2))
+```
+
+No interaction
+
+##### Umur_Corrected : Umur_Anak_Autisme
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Umur_Corrected : Umur_Anak_Autisme , data = data2))
+```
+
+No interaction
+
+##### Umur_Corrected : Severity_ASD
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Umur_Corrected : Severity_ASD , data = data2))
+```
+
+No interaction
+
+##### Umur_Corrected : Knowledge_Total
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Umur_Corrected : Knowledge_Total , data = data2))
+```
+
+No interaction
+
+##### Umur_Corrected : Att_Total
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Umur_Corrected : Att_Total , data = data2))
+```
+
+No interaction
+
+##### Pendidikan : Bil_Anak_Autisme
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Pendidikan : Bil_Anak_Autisme , data = data2))
+```
+
+No interaction
+
+##### Pendidikan : Umur_Anak_Autisme
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Pendidikan : Umur_Anak_Autisme , data = data2))
+```
+
+No interaction
+
+##### Pendidikan : Severity_ASD
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Pendidikan : Severity_ASD , data = data2))
+```
+
+No interaction
+
+##### Pendidikan : Knowledge_Total
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Pendidikan : Knowledge_Total , data = data2))
+```
+
+No interaction
+
+##### Pendidikan : Att_Total
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Pendidikan : Att_Total , data = data2))
+```
+
+No interaction
+
+##### Bil_Anak_Autisme : Umur_Anak_Autisme
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Bil_Anak_Autisme : Umur_Anak_Autisme , data = data2))
+```
+
+No interaction
+
+##### Bil_Anak_Autisme : Severity_ASD
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Bil_Anak_Autisme : Severity_ASD , data = data2))
+```
+
+No interaction
+
+##### Bil_Anak_Autisme : Knowledge_Total
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Bil_Anak_Autisme : Knowledge_Total , data = data2))
+```
+
+No interaction
+
+##### Bil_Anak_Autisme : Att_Total
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Bil_Anak_Autisme : Att_Total , data = data2))
+```
+
+No interaction
+
+##### Umur_Anak_Autisme : Severity_ASD
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Umur_Anak_Autisme : Severity_ASD , data = data2))
+```
+
+No interaction
+
+##### Umur_Anak_Autisme : Knowledge_Total
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Umur_Anak_Autisme :Knowledge_Total , data = data2))
+```
+
+No interaction
+
+##### Umur_Anak_Autisme : Att_Total
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Umur_Anak_Autisme :Att_Total , data = data2))
+```
+
+No interaction
+
+##### Severity_ASD : Knowledge_Total
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Severity_ASD :Knowledge_Total , data = data2))
+```
+
+No interaction
+
+##### Severity_ASD : Att_Total
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Severity_ASD : Att_Total , data = data2))
+```
+
+No interaction
+
+##### Knowledge_Total : Att_Total
+
+```{r}
+summary(glm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total + Knowledge_Total : Att_Total , data = data2))
+```
+
+No interaction
+
+Preliminary final model
+
+```{r}
+mlr_pra_prelim <- lm(Pra_Total ~ Umur_Corrected + Pendidikan +  Bil_Anak_Autisme + Umur_Anak_Autisme + Severity_ASD + Knowledge_Total + Att_Total, data = data2)
+summary(mlr_pra_prelim)
+```
+
+### Model fit assessment
+
+#### Percentage of variance explained, R2
+
+```{r}
+rsq(mlr_pra_prelim, adj = TRUE)
+```
+
+#### Histogram and box-and-whiskers plot
+
+To assess the normality of raw/unstandardized residuals of the MLR model.
+
+```{r}
+rraw_pra <- resid(mlr_pra_prelim)
+hist(rraw_pra)
+```
+
+#### Normality of residuals
+
+```{r}
+plot(mlr_pra_prelim, which = 2)  # Q-Q plot
+shapiro.test(resid(mlr_pra_prelim))
+```
+
+#### Scatter plots
+
+standardized residuals vs standardized predicted values plot
+
+```{r}
+rstd_pra <- rstandard(mlr_pra_prelim)  # standardized residuals
+pstd_pra <- scale(predict(mlr_pra_prelim))  # standardized predicted values
+plot(rstd_pra ~ pstd_pra, xlab = "Std predicted", ylab = "Std residuals")
+abline(0, 0)  # normal, linear, equal variance
+```
+
+linear relationship between the raw residuals and the observed values of the numerical predictors
+
+```{r}
+plot(rraw_pra ~ data2$Pra_Total, xlab = "Practice Total", ylab = "Raw Residuals")
+abline(0, 0)
+```
+
+```{r}
+plot(mlr_pra_prelim, which = 1)
+```
+
+## Final Model Practice
+
+```{r}
+tbl_kap_pra <- tbl_regression(
+  mlr_pra_prelim,
+  exponentiate = FALSE,
+  conf.int = TRUE) %>%
+  add_significance_stars() %>%
+  bold_p(t = 0.05) %>%
+  bold_labels()%>%
+  add_glance_source_note()
+tbl_kap_pra
+```
+
+```{r}
+tbl_kap_pra <- tbl_regression(
+  mlr_pra_prelim,
+  exponentiate = FALSE,
+  conf.int = TRUE) 
+tbl_kap_pra
+```
